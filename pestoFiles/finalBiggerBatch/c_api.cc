@@ -2169,7 +2169,7 @@ TF_Session* TF_NewSession(TF_Graph* graph, const TF_SessionOptions* opt,
       graph->sessions[new_session] = "";
       Json::Value partitions;
       int count = 0;
-      std::ifstream patFile("/root/pestoPlacement/part.json");
+      std::ifstream patFile("/root/pestoPlacement/partLayerPCIE.json");
       std::cout << "manual placement in process !!!! \n";
       patFile >> partitions;
       patFile.close();
@@ -2184,7 +2184,7 @@ TF_Session* TF_NewSession(TF_Graph* graph, const TF_SessionOptions* opt,
         }
       }
       std::cout << "!!!!!!!!!!!!! found count : 0 " << found << "\n" << "\n";
-      if (found > 10)
+      if (found > 1600)
       {
       for (Node* node : graphptr->nodes()) {
         string name = node->name();

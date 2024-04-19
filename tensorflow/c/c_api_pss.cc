@@ -2184,7 +2184,7 @@ TF_Session* TF_NewSession(TF_Graph* graph, const TF_SessionOptions* opt,
         }
       }
       std::cout << "!!!!!!!!!!!!! found count : 0 " << found << "\n" << "\n";
-      if (found > 10)
+      if (found > 3200)
       {
       for (Node* node : graphptr->nodes()) {
         string name = node->name();

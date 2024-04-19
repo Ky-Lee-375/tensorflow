@@ -78,11 +78,8 @@ limitations under the License.
 #include "tensorflow/core/util/device_name_utils.h"
 #include "tensorflow/core/util/env_var.h"
 
-
-//added by ubaid
 #include <fstream>
 #include <jsoncpp/json/json.h>
-
 namespace tensorflow {
 
 namespace {
@@ -555,7 +552,7 @@ Status DirectSession::RunInternal(
         collective_executor_mgr_->FindOrCreate(step_id), true /*inherit_ref*/));
   }
 #endif
-
+  // std::cout << "starting execs\n";
   // Start parallel Executors.
   const size_t num_executors = executors_and_keys->items.size();
   ExecutorBarrier* barrier = new ExecutorBarrier(
@@ -680,7 +677,7 @@ Status DirectSession::RunInternal(
       pool->Schedule(std::move(c));
     };
   }
-
+  // std::cout << "running execs \n";
   for (const auto& item : executors_and_keys->items) {
     // TODO(azaks): support partial run.
     // TODO(azaks): if the device picks its own threadpool, we need to assign
@@ -702,39 +699,48 @@ Status DirectSession::RunInternal(
 
     item.executor->RunAsync(args, barrier->Get());
   }
+  // std::cout << "done execs \n";
 
   WaitForNotification(&run_state, &step_cancellation_manager,
                       run_options.timeout_in_ms() > 0
                           ? run_options.timeout_in_ms()
                           : operation_timeout_in_ms_);
-
+  // std::cout << "done waiting\n";
   if (!cancellation_manager_->DeregisterCallback(cancellation_token)) {
+    // std::cout << "debugg 1\n";
     // The step has been cancelled: make sure we don't attempt to receive the
     // outputs as this would make it block forever.
     mutex_lock l(run_state.mu_);
     run_state.status.Update(errors::Cancelled("Run call was cancelled"));
+    // std::cout << "debugg 2\n";
   }
 
   if (profiler_session) {
+    // std::cout << "debugg 3\n";
     TF_RETURN_IF_ERROR(profiler_session->CollectData(run_metadata));
+    // std::cout << "debugg 4\n";
   }
 
   {
+    // std::cout << "debugg 5\n";
     mutex_lock l(run_state.mu_);
     TF_RETURN_IF_ERROR(run_state.status);
+    // std::cout << "debugg 6\n";
   }
 
   // Save the output tensors of this run we choose to keep.
   if (!run_state.tensor_store.empty()) {
+    // std::cout << "debugg 7\n";
     TF_RETURN_IF_ERROR(run_state.tensor_store.SaveTensors(
         {executors_and_keys->callable_options.fetch().begin(),
          executors_and_keys->callable_options.fetch().end()},
         &session_state_));
   }
-
+  // std::cout << "finalzing\n";
   if (run_state.collector) {
     run_state.collector->Finalize();
   }
+  // std::cout << "collecting logs\n";
 
   // Build and return the cost model as instructed.
   if (update_cost_model) {
@@ -768,6 +774,7 @@ Status DirectSession::RunInternal(
       exec_and_lib.graph->ToGraphDef(partition_graph_def);
     }
   }
+  // std::cout << "done logs\n";
   metrics::UpdateGraphExecTime(options_.env->NowMicros() - start_time_usecs);
 
   return Status::OK();
@@ -802,6 +809,7 @@ Status DirectSession::Run(const RunOptions& run_options,
   TF_RETURN_IF_ERROR(GetOrCreateExecutors(input_tensor_names, output_names,
                                           target_nodes, &executors_and_keys,
                                           &run_state_args));
+  // std::cout << "RUN()\n";
   {
     mutex_lock l(collective_graph_key_lock_);
     collective_graph_key_ = executors_and_keys->collective_graph_key;
@@ -835,11 +843,11 @@ Status DirectSession::Run(const RunOptions& run_options,
   if (LogMemory::IsEnabled()) {
     LogMemory::RecordStep(step_id, run_state_args.handle);
   }
-
+  // std::cout << "run internal\n";
   TF_RETURN_IF_ERROR(RunInternal(step_id, run_options, &call_frame,
                                  executors_and_keys, run_metadata,
                                  thread::ThreadPoolOptions()));
-
+  // std::cout << "done 11\n";
   // Receive outputs.
   if (outputs) {
     std::vector<Tensor> sorted_outputs;
@@ -905,6 +913,7 @@ Status DirectSession::PRunSetup(const std::vector<string>& input_names,
   TF_RETURN_IF_ERROR(GetOrCreateExecutors(input_names, output_names,
                                           target_nodes, &executors_and_keys,
                                           &run_state_args));
+  // std::cout << "PRunSetup\n";
 
   // Create the run state and save it for future PRun calls.
   Executor::Args args;
@@ -1263,8 +1272,9 @@ Status DirectSession::CreateExecutors(
   TF_RETURN_IF_ERROR(CreateGraphs(
       options, &graphs, &func_info->flib_def, run_state_args, &ek->input_types,
       &ek->output_types, &ek->collective_graph_key));
-
+  // std::cout << "in CreateExecutors\n";
   if (run_state_args->is_partial_run) {
+    std::cout << "is partial run\n";
     ek->graph = std::move(run_state_args->graph);
     std::unordered_set<StringPiece, StringPieceHasher> names;
     for (const string& input : callable_options.feed()) {
@@ -1295,7 +1305,7 @@ Status DirectSession::CreateExecutors(
       device_mgr_.get(), options_.env, graph_def_version,
       func_info->flib_def.get(), optimizer_opts, thread_pools_[0].first,
       nullptr, nullptr, session_metadata));
-
+  // std::cout << "assigning part to dev\n";
   GraphOptimizer optimizer(optimizer_opts);
   for (auto iter = graphs.begin(); iter != graphs.end(); ++iter) {
     const string& partition_name = iter->first;
@@ -1366,23 +1376,29 @@ Status DirectSession::CreateExecutors(
     auto executor_type = options_.config.experimental().executor_type();
     TF_RETURN_IF_ERROR(NewExecutor(
         executor_type, params, std::move(partition_graph), &item->executor));
+    // std::cout << "part done once \n";
   }
+  // std::cout << "done assigning part to dev\n";
 
   // Cache the mapping from input/output names to graph elements to
   // avoid recomputing it every time.
   if (!run_state_args->is_partial_run) {
+    // std::cout << "partial run\n";
     // For regular `Run()`, we use the function calling convention, and so
     // maintain a mapping from input/output names to
     // argument/return-value ordinal index.
     for (int i = 0; i < callable_options.feed().size(); ++i) {
       const string& input = callable_options.feed(i);
       ek->input_name_to_index[input] = i;
+      // std::cout << "getting keys for feed\n";
     }
     for (int i = 0; i < callable_options.fetch().size(); ++i) {
       const string& output = callable_options.fetch(i);
       ek->output_name_to_index[output] = i;
+      // std::cout << "mapping keys to feeds\n";
     }
   } else {
+    // std::cout << "not a partial run\n";
     // For `PRun()`, we use the rendezvous calling convention, and so
     // maintain a mapping from input/output names to rendezvous keys.
     //
@@ -1392,18 +1408,24 @@ Status DirectSession::CreateExecutors(
       const string& input = callable_options.feed(i);
       ek->input_name_to_rendezvous_key[input] = GetRendezvousKey(
           input, device_set_.client_device()->attributes(), FrameAndIter(0, 0));
+      // std::cout << "getting keys for feed\n";
+    
     }
     for (int i = 0; i < callable_options.fetch().size(); ++i) {
       const string& output = callable_options.fetch(i);
       ek->output_name_to_rendezvous_key[output] =
           GetRendezvousKey(output, device_set_.client_device()->attributes(),
                            FrameAndIter(0, 0));
+     // std::cout << "mapping keys to feeds\n";
     }
   }
 
   *out_executors_and_keys = std::move(ek);
+  // std::cout << "moving\n";
   *out_func_info = std::move(func_info);
+  // std::cout << "moving 2\n";
   return Status::OK();
+  // std::cout << "done creating executors\n";
 }
 
 Status DirectSession::GetOrCreateExecutors(
@@ -1567,6 +1589,36 @@ Status DirectSession::CreateGraphs(
         client_graph->fetch_types.size());
   }
 
+  /*
+  Json::Value partitions1;
+//  std::ifstream file3("/root/matmul_pesto/lastday_newpart_2.00.json");
+  std::ifstream file3("/root/rnnlm_pesto/lastday_newpart.json");
+  file3 >> partitions1;
+  file3.close();
+
+  Graph * org_graphptr = &client_graph->graph;
+  if (org_graphptr->num_node_ids() > 5000) {
+  std::cout << "mapping devices\n";
+
+  for (Node* node : org_graphptr->nodes()) {
+    string name = node->name();
+    //node->ClearAttr("_class");
+    for (Json::ValueIterator itr = partitions1.begin(); itr != partitions1.end(); itr++) {
+      if (name == itr.key().asString()) {
+        //std::cout << partitions1[itr.key().asString()].asString() <<"\n";
+        string dev = partitions1[itr.key().asString()].asString();
+        node->set_assigned_device_name(dev);
+        node->set_requested_device(dev);
+        //std::cout << "device mapped\n";
+        // count += 1;
+        break;
+      }
+    }
+  }
+  }
+*/
+
+
   Graph * graphptr1 = &client_graph->graph;
   std::cout << "ds: manual graph scheduling in direct session !!!!!!\n";
   Json::Value cdeps1;
@@ -1574,19 +1626,6 @@ Status DirectSession::CreateGraphs(
   cdepFile1 >> cdeps1;
   cdepFile1.close();
   int countSched1 = 0;
-  int matched = 0;
-  for (Node* node : graphptr1->nodes()) {
-    string name = node->name();
-    for (Json::ValueIterator itr = cdeps1.begin(); itr != cdeps1.end(); itr++) {
-      if (name == itr.key().asString()) {
-              matched += 1;
-      }
-    }
-  }
-
-  if (matched > 10) {
-
-
 
   for (Node* node : graphptr1->nodes()) {
     string name = node->name();
@@ -1609,7 +1648,7 @@ Status DirectSession::CreateGraphs(
             graphptr1->AddControlEdge(src, node);
             countSched1 += 1;
             // std::cout << "ds: done adding dep\n";
-            //return new_session;
+           //return new_session;
           }
           src = NULL;
         }
@@ -1617,9 +1656,6 @@ Status DirectSession::CreateGraphs(
     }
   }
   std::cout << "ds: done scheduling! count : " << countSched1 << "\n";
-  }
-
-
   auto current_stateful_placements = execution_state->GetStatefulPlacements();
   // Update our current state based on the execution_state's
   // placements.  If there are any mismatches for a node,
@@ -1661,9 +1697,54 @@ Status DirectSession::CreateGraphs(
   };
   popts.flib_def = &client_graph->graph.flib_def();
   popts.control_flow_added = false;
-
+  // popts.scheduling_for_recvs = true;
+  // popts.need_to_record_start_times = true;
   std::unordered_map<string, GraphDef> partitions;
   TF_RETURN_IF_ERROR(Partition(popts, &client_graph->graph, &partitions));
+  AddControlEdges(popts, &partitions);
+  /* int count = 0;
+  for (auto& partition : partitions) {
+    const string& partition_name = partition.first;
+    std::unique_ptr<Graph>* graph = &partition.second;
+
+
+    std::cout << "manual scheduling !!!!!!\n";
+    tensorflow::Graph * graphptr = graph->get();
+    Json::Value cdeps;
+    std::ifstream cdepFile("/root/pestoPlacement/cdep.json");
+    cdepFile >> cdeps;
+    cdepFile.close();
+
+    for (Node* node : graphptr->nodes()) {
+      string name = node->name();
+      for (Json::ValueIterator itr = cdeps.begin(); itr != cdeps.end(); itr++) {
+        if (name == itr.key().asString()) {
+          Node * src = NULL;
+          Json::Value currDeps = cdeps[name];
+          for (Json::Value dep : currDeps) {
+            string depName = dep.asString();
+            for (Node * cNode : graphptr->nodes()) {
+              if (depName == cNode->name()) {
+                src = cNode;
+                break;
+              }
+            }
+          }
+          if (src) {
+            count += 1;
+            // myfile << src->name() << "->" << node->name() << "\n";
+            // graphptr->AddControlEdge(src, node);
+          }
+          break;
+        }
+      }
+    }
+    // myfile.close();
+//    std::cout << "deps added from parts : " << count  << "\n";
+  }
+  std::cout << "deps added from parts : " << count  << "\n";
+*/
+  //AddControlEdges(popts, &partitions);
 
   std::vector<string> device_names;
   for (auto device : devices_) {
@@ -1696,6 +1777,49 @@ Status DirectSession::CreateGraphs(
         device_opts, std::move(partition.second), device_graph.get()));
     outputs->emplace(partition.first, std::move(device_graph));
   }
+/*
+  for (auto& partition : *outputs) {
+    const string& partition_name = partition.first;
+    std::unique_ptr<Graph>* graph = &partition.second;
+
+
+    std::cout << "manual scheduling !!!!!!\n";
+    tensorflow::Graph * graphptr = graph->get();
+    Json::Value cdeps;
+    std::ifstream cdepFile("/root/pestoPlacement/cdep.json");
+    cdepFile >> cdeps;
+    cdepFile.close();
+
+    int count = 0;
+    for (Node* node : graphptr->nodes()) {
+      string name = node->name();
+      for (Json::ValueIterator itr = cdeps.begin(); itr != cdeps.end(); itr++) {
+        if (name == itr.key().asString()) {
+          Node * src = NULL;
+          Json::Value currDeps = cdeps[name];
+          for (Json::Value dep : currDeps) {
+            string depName = dep.asString();
+            for (Node * cNode : graphptr->nodes()) {
+              if (depName == cNode->name()) {
+                src = cNode;
+                break;
+              }
+            }
+          }
+          if (src) {
+            count += 1;
+            // myfile << src->name() << "->" << node->name() << "\n";
+            graphptr->AddControlEdge(src, node);
+          }
+          break;
+        }
+      }
+    }
+    // myfile.close();
+    std::cout << "deps added : " << count  << "\n";
+  }
+*/
+  //AddControlEdges(popts, &partitions);
 
   GraphOptimizationPassOptions optimization_options;
   optimization_options.session_options = &options_;
@@ -1705,10 +1829,48 @@ Status DirectSession::CreateGraphs(
       OptimizationPassRegistry::POST_PARTITIONING, optimization_options));
 
   Status s;
+ //  std::ofstream myfile;
+ //  myfile.open ("/root/pestoPlacement/cdepAdded.txt", std::ios_base::app);
+  int count = 0;
   for (auto& partition : *outputs) {
     const string& partition_name = partition.first;
     std::unique_ptr<Graph>* graph = &partition.second;
 
+
+    std::cout << "manual scheduling !!!!!!\n";
+    tensorflow::Graph * graphptr = graph->get();
+    Json::Value cdeps;
+    std::ifstream cdepFile("/root/pestoPlacement/cdep.json");
+    cdepFile >> cdeps;
+    cdepFile.close();
+
+    for (Node* node : graphptr->nodes()) {
+      string name = node->name();
+      for (Json::ValueIterator itr = cdeps.begin(); itr != cdeps.end(); itr++) {
+        if (name == itr.key().asString()) {
+          Node * src = NULL;
+          Json::Value currDeps = cdeps[name];
+          for (Json::Value dep : currDeps) {
+            string depName = dep.asString();
+            for (Node * cNode : graphptr->nodes()) {
+              if (depName == cNode->name()) {
+                src = cNode;
+                break;
+              }
+            }
+          }
+          if (src) {
+            count += 1;
+            // myfile << src->name() << "->" << node->name() << "\n";
+            // graphptr->AddControlEdge(src, node);
+          }
+          break;
+        }
+      }
+    }
+    // myfile.close();
+    // std::cout << "deps added : " << count  << "\n";
+ 
     VLOG(2) << "Created " << DebugString(graph->get()) << " for "
             << partition_name;
 
@@ -1721,9 +1883,13 @@ Status DirectSession::CreateGraphs(
       break;
     }
   }
+
+  std::cout << "deps added after part : " << count  << "\n";
+
   *flib_def = std::move(client_graph->flib_def);
   std::swap(*input_types, client_graph->feed_types);
   std::swap(*output_types, client_graph->fetch_types);
+  // std::cout << "getting out of creat graphs\n";
   return s;
 }
 
@@ -1804,14 +1970,18 @@ bool DirectSession::RunState::PendingDone() const {
 void DirectSession::WaitForNotification(RunState* run_state,
                                         CancellationManager* cm,
                                         int64 timeout_in_ms) {
+  // std::cout << "begin waiting\n";
   const Status status =
       WaitForNotification(&run_state->executors_done, timeout_in_ms);
+  // std::cout << "end waiting\n";
   if (!status.ok()) {
     {
       mutex_lock l(run_state->mu_);
       run_state->status.Update(status);
     }
+    // std::cout << "next wait\n";
     cm->StartCancel();
+    // std::cout << "cancelled\n";
     // We must wait for the executors to complete, because they have borrowed
     // references to `cm` and other per-step state. After this notification, it
     // is safe to clean up the step.
@@ -1821,6 +1991,7 @@ void DirectSession::WaitForNotification(RunState* run_state,
 
 ::tensorflow::Status DirectSession::WaitForNotification(
     Notification* notification, int64 timeout_in_ms) {
+  // std::cout << "inside the other wait\n";
   if (timeout_in_ms > 0) {
     const int64 timeout_in_us = timeout_in_ms * 1000;
     const bool notified =
@@ -1850,6 +2021,7 @@ Status DirectSession::MakeCallable(const CallableOptions& callable_options,
     *out_handle = next_callable_handle_++;
     callables_[*out_handle] = {std::move(ek), std::move(func_info)};
   }
+  // std::cout << "callable done\n";
   return Status::OK();
 }
 

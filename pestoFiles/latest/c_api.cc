@@ -70,7 +70,7 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/public/session.h"
 #include "tensorflow/core/public/version.h"
-
+//added by ubaid
 #include <fstream>
 #include <jsoncpp/json/json.h>
 // The implementation below is at the top level instead of the
@@ -2167,41 +2167,62 @@ TF_Session* TF_NewSession(TF_Graph* graph, const TF_SessionOptions* opt,
     if (graph != nullptr) {
       mutex_lock l(graph->mu);
       graph->sessions[new_session] = "";
-      Json::Value partitions;
-      int count = 0;
-      std::ifstream patFile("/root/pestoPlacement/part.json");
-      std::cout << "manual placement in process !!!! \n";
-      patFile >> partitions;
-      patFile.close();
-      tensorflow::Graph * graphptr = &(graph->graph);
-      int found = 0;
-      for (Node* node : graphptr->nodes()) {
-        string name = node->name();
-        for (Json::ValueIterator itr = partitions.begin(); itr != partitions.end(); itr++) {
-          if (name == itr.key().asString()) {
-            found += 1;
-          }
-        }
-      }
-      std::cout << "!!!!!!!!!!!!! found count : 0 " << found << "\n" << "\n";
-      if (found > 10)
-      {
-      for (Node* node : graphptr->nodes()) {
-        string name = node->name();
-        for (Json::ValueIterator itr = partitions.begin(); itr != partitions.end(); itr++) {
-          if (name == itr.key().asString()) {
-            string dev = partitions[itr.key().asString()].asString();
-            node->set_assigned_device_name(dev);
-            node->set_requested_device(dev);
-            count += 1;
-            node->ClearAttr("_class");
-            break;
-          }
-        }
-      }
-      }
-      std::cout << "total number of ops placed : " << count << "\n";
     }
+    Json::Value partitions;
+    std::ifstream patFile("/root/pestoPlacement/part.json");
+    std::cout << "manual placement in process !!!! \n";
+    patFile >> partitions;
+    patFile.close();
+    tensorflow::Graph * graphptr = &(graph->graph);
+    for (Node* node : graphptr->nodes()) {
+      string name = node->name();
+      for (Json::ValueIterator itr = partitions.begin(); itr != partitions.end(); itr++) {
+        if (name == itr.key().asString()) {
+          string dev = partitions[itr.key().asString()].asString();
+          node->set_assigned_device_name(dev);
+          node->set_requested_device(dev);
+          node->ClearAttr("_class");
+          break;
+        }
+      }
+    }
+/*
+    std::cout << "manual scheduling in c_api !!!!!!\n";
+    Json::Value cdeps;
+    std::ifstream cdepFile("/root/pestoPlacement/cdep.json");
+    cdepFile >> cdeps;
+    cdepFile.close();
+
+    for (Node* node : graphptr->nodes()) {
+      string name = node->name();
+      for (Json::ValueIterator itr = cdeps.begin(); itr != cdeps.end(); itr++) {
+        if (name == itr.key().asString()) {
+          Node * src = NULL;
+          Json::Value currDeps = cdeps[name];
+          for (Json::Value dep : currDeps) {
+            string depName = dep.asString();
+            for (Node * cNode : graphptr->nodes()) {
+              if (depName == cNode->name()) {
+                src = cNode;
+                break;
+              }
+            }
+            if (src) {
+              std::cout << "found a dep\n";
+              std::cout << "src :  " << src->name() << "\n";
+              std::cout << "dst :  " << node->name() << "\n";
+              //graphptr->AddControlEdge(src, node);
+              std::cout << "done adding dep\n";
+              // return new_session;
+            }
+            src = NULL;
+          }
+        }
+      }
+    }
+
+    std::cout << "done scheduling!\n";
+*/
     return new_session;
   } else {
     DCHECK_EQ(nullptr, session);

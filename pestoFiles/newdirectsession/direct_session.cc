@@ -78,11 +78,8 @@ limitations under the License.
 #include "tensorflow/core/util/device_name_utils.h"
 #include "tensorflow/core/util/env_var.h"
 
-
-//added by ubaid
 #include <fstream>
 #include <jsoncpp/json/json.h>
-
 namespace tensorflow {
 
 namespace {
@@ -1567,59 +1564,6 @@ Status DirectSession::CreateGraphs(
         client_graph->fetch_types.size());
   }
 
-  Graph * graphptr1 = &client_graph->graph;
-  std::cout << "ds: manual graph scheduling in direct session !!!!!!\n";
-  Json::Value cdeps1;
-  std::ifstream cdepFile1("/root/pestoPlacement/cdep.json");
-  cdepFile1 >> cdeps1;
-  cdepFile1.close();
-  int countSched1 = 0;
-  int matched = 0;
-  for (Node* node : graphptr1->nodes()) {
-    string name = node->name();
-    for (Json::ValueIterator itr = cdeps1.begin(); itr != cdeps1.end(); itr++) {
-      if (name == itr.key().asString()) {
-              matched += 1;
-      }
-    }
-  }
-
-  if (matched > 10) {
-
-
-
-  for (Node* node : graphptr1->nodes()) {
-    string name = node->name();
-    for (Json::ValueIterator itr = cdeps1.begin(); itr != cdeps1.end(); itr++) {
-      if (name == itr.key().asString()) {
-        Node * src = NULL;
-        Json::Value currDeps = cdeps1[name];
-        for (Json::Value dep : currDeps) {
-          string depName = dep.asString();
-          for (Node * cNode : graphptr1->nodes()) {
-            if (depName == cNode->name()) {
-              src = cNode;
-              break;
-            }
-          }
-          if (src) {
-            // std::cout << "ds: found a dep\n";
-            // std::cout << "ds: src :  " << src->name() << "\n";
-            // std::cout << "ds: dst :  " << node->name() << "\n";
-            graphptr1->AddControlEdge(src, node);
-            countSched1 += 1;
-            // std::cout << "ds: done adding dep\n";
-            //return new_session;
-          }
-          src = NULL;
-        }
-      }
-    }
-  }
-  std::cout << "ds: done scheduling! count : " << countSched1 << "\n";
-  }
-
-
   auto current_stateful_placements = execution_state->GetStatefulPlacements();
   // Update our current state based on the execution_state's
   // placements.  If there are any mismatches for a node,
@@ -1705,10 +1649,47 @@ Status DirectSession::CreateGraphs(
       OptimizationPassRegistry::POST_PARTITIONING, optimization_options));
 
   Status s;
+  std::ofstream myfile;
+  myfile.open ("/root/pestoPlacement/cdepAdded.txt", std::ios_base::app);
   for (auto& partition : *outputs) {
     const string& partition_name = partition.first;
     std::unique_ptr<Graph>* graph = &partition.second;
 
+
+    std::cout << "manual scheduling !!!!!!\n";
+    tensorflow::Graph * graphptr = graph->get();
+    Json::Value cdeps;
+    std::ifstream cdepFile("/root/pestoPlacement/cdep.json");
+    cdepFile >> cdeps;
+    cdepFile.close();
+
+    int count = 0;
+    for (Node* node : graphptr->nodes()) {
+      string name = node->name();
+      for (Json::ValueIterator itr = cdeps.begin(); itr != cdeps.end(); itr++) {
+        if (name == itr.key().asString()) {
+          Node * src = NULL;
+          Json::Value currDeps = cdeps[name];
+          for (Json::Value dep : currDeps) {
+            string depName = dep.asString();
+            for (Node * cNode : graphptr->nodes()) {
+              if (depName == cNode->name()) {
+                src = cNode;
+                break;
+              }
+            }
+          }
+          if (src) {
+            count += 1;
+            myfile << src->name() << "->" << node->name() << "\n";
+            graphptr->AddControlEdge(src, node);
+          }
+          break;
+        }
+      }
+    }
+    myfile.close();
+    std::cout << "deps added : " << count  << "\n";
     VLOG(2) << "Created " << DebugString(graph->get()) << " for "
             << partition_name;
 

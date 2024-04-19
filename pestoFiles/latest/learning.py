@@ -461,7 +461,7 @@ def _wait_for_step(sess, global_step, step):
 
 
 #def train_step(sess, train_op, global_step, train_step_kwargs):
-def train_step(sess, train_op, global_step, train_step_kwargs, log_fn_pref=None, timeList=None, doLogs=None, lossList=None):
+def train_step(sess, train_op, global_step, train_step_kwargs, log_fn_pref=None, timeList=None, doLogs=None):
   """Function that takes a gradient step and specifies whether to stop.
 
   Args:
@@ -535,8 +535,6 @@ def train_step(sess, train_op, global_step, train_step_kwargs, log_fn_pref=None,
     if sess.run(train_step_kwargs['should_log']):
       logging.info('global step %d: loss = %.4f (%.3f sec/step)',
                    np_global_step, total_loss, time_elapsed)
-
-  lossList.append(total_loss)
 
   # TODO(nsilberman): figure out why we can't put this into sess.run. The
   # issue right now is that the stop check depends on the global step. The
@@ -804,29 +802,24 @@ def train(train_op,
           sess.run(init_tokens_op)
         try:
           timeList = []
-          lossList = []
           while not sv.should_stop():
             #total_loss, should_stop = train_step_fn(sess, train_op, global_step,
             #                                        train_step_kwargs)
             total_loss, should_stop = train_step_fn(
-                sess, train_op, global_step, train_step_kwargs, log_fn_pref, timeList, doLogs, lossList)
+                sess, train_op, global_step, train_step_kwargs, log_fn_pref, timeList, doLogs)
 
             if should_stop:
               if log_fn_pref is not None:
                 if doLogs:
                   timingFn = '%s/timelistLogs.txt' % (log_fn_pref)
-                  lossFn = '%s/losslistLogs.txt' % (log_fn_pref)
                 else:
                   timingFn = '%s/timelist.txt' % (log_fn_pref)
-                  lossFn = '%s/losslist.txt' % (log_fn_pref)
 
                 with open(timingFn, 'w') as timingF:
                   for ts in timeList:
                     timingF.write('%.5f\n' % (ts))
 
-                with open(lossFn, 'w') as lossF:
-                  for loss in timeList:
-                    lossF.write('%.5f\n' % (loss))
+
               logging.info('Stopping Training.')
               sv.request_stop()
               break

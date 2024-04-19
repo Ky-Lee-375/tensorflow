@@ -1584,7 +1584,7 @@ Status DirectSession::CreateGraphs(
     }
   }
 
-  if (matched > 10) {
+  if (matched > 3000) {
 
 
 
@@ -1609,7 +1609,7 @@ Status DirectSession::CreateGraphs(
             graphptr1->AddControlEdge(src, node);
             countSched1 += 1;
             // std::cout << "ds: done adding dep\n";
-            //return new_session;
+           //return new_session;
           }
           src = NULL;
         }
